@@ -159,7 +159,7 @@ export default function DreamPage() {
         <span className="flex items-center gap-2">
           <i className="h-1.5 w-1.5 rounded-full bg-primary" />
           {quota?.enabled
-            ? `今日还可解梦 ${quota.remaining} 次`
+            ? `每个 IP 每 24 小时限 ${quota.limit} 次 · 剩余 ${quota.remaining} 次`
             : settings.enable_rate_limit
               ? `每个 IP 免费 ${settings.rate_limit}`
               : '描述越具体，解读越准确'}
