@@ -1,0 +1,9 @@
+# robots.txt for Volcano Dream AI
+User-agent: *
+Allow: /
+Disallow: /api/
+
+# Sitemap
+
+# Crawl-delay
+Crawl-delay: 1

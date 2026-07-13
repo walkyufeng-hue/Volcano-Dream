@@ -1,0 +1,32 @@
+services:
+  volcano-dream:
+    build: .
+    container_name: volcano-dream
+    restart: always
+    ports:
+      - 8000:8000
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      cache_client_type: redis
+      KV_URL: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  redis-data:
