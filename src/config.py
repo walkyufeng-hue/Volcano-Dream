@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     # rate limit settings
     enable_rate_limit: bool = True
     # rate limit xxx request per xx seconds
-    # Anonymous users: at most 3 requests in a rolling 24-hour window.
-    rate_limit: Tuple[int, int] = (3, 24 * 60 * 60)
+    # Anonymous users: at most 1 request in a rolling 24-hour window.
+    rate_limit: Tuple[int, int] = (1, 24 * 60 * 60)
     user_rate_limit: Tuple[int, int] = (600, 60 * 60)
 
     # Whole-site circuit breakers. These rolling limits protect the API key
