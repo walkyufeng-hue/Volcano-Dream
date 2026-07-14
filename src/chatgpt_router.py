@@ -130,6 +130,7 @@ async def divination(
                 image_token = create_image_token(
                     divination_body.prompt,
                     full_response,
+                    divination_body.prompt_type,
                 )
                 yield (
                     "event: image_token\n"

@@ -91,9 +91,9 @@ class SecurityTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), "ok")
 
-    def test_anonymous_daily_quota_is_one_request(self) -> None:
-        self.assertEqual(settings.rate_limit, (1, 24 * 60 * 60))
-        self.assertEqual(settings.get_human_rate_limit(), "1次/24小时")
+    def test_anonymous_daily_quota_is_two_requests(self) -> None:
+        self.assertEqual(settings.rate_limit, (2, 24 * 60 * 60))
+        self.assertEqual(settings.get_human_rate_limit(), "2次/24小时")
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ from src.models import DreamImageBody
 from src.skills import (
     DreamImageGenerationSkill,
     DreamImagePromptSkill,
+    EmotionImagePromptSkill,
     ImageGenerationSkillError,
 )
 
@@ -20,6 +21,7 @@ router = APIRouter()
 _logger = logging.getLogger(__name__)
 TOKEN_TTL_SECONDS = 10 * 60
 IMAGE_PROMPT_SKILL = DreamImagePromptSkill()
+EMOTION_IMAGE_PROMPT_SKILL = EmotionImagePromptSkill()
 IMAGE_GENERATION_SKILL = DreamImageGenerationSkill(
     api_base=settings.api_base,
     api_key=settings.api_key,
@@ -32,12 +34,17 @@ def _cache_key(token: str) -> str:
     return f"{settings.project_name}:dream-image:{token}"
 
 
-def create_image_token(dream: str, interpretation: str) -> str:
+def create_image_token(
+    source_text: str,
+    interpretation: str,
+    prompt_type: str = "dream",
+) -> str:
     token = secrets.token_urlsafe(32)
     payload = json.dumps(
         {
-            "dream": dream.strip(),
+            "source_text": source_text.strip(),
             "interpretation": interpretation.strip(),
+            "prompt_type": prompt_type,
         },
         ensure_ascii=False,
     )
@@ -53,7 +60,12 @@ def build_image_prompt(dream: str, interpretation: str) -> str:
     return IMAGE_PROMPT_SKILL.run(dream, interpretation)
 
 
-@router.post("/api/dream-image", tags=["Dream Image"])
+def build_emotion_image_prompt(journal: str, reflection: str) -> str:
+    return EMOTION_IMAGE_PROMPT_SKILL.run(journal, reflection)
+
+
+@router.post("/api/dream-image", include_in_schema=False)
+@router.post("/api/emotional-image", tags=["Emotional Image"])
 async def generate_dream_image(body: DreamImageBody):
     cache_client = CacheClientFactory.get_client()
     key = _cache_key(body.token)
@@ -67,10 +79,19 @@ async def generate_dream_image(body: DreamImageBody):
 
     try:
         payload = json.loads(cached_payload)
-        prompt = build_image_prompt(
+        prompt_type = payload.get("prompt_type", "dream")
+        source_text = payload.get(
+            "source_text",
             payload.get("dream", ""),
-            payload.get("interpretation", ""),
         )
+        interpretation = payload.get("interpretation", "")
+        if prompt_type == "emotion_journal":
+            prompt = build_emotion_image_prompt(
+                source_text,
+                interpretation,
+            )
+        else:
+            prompt = build_image_prompt(source_text, interpretation)
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

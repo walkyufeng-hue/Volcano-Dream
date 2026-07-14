@@ -2,19 +2,40 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Trash2, Calendar, Image as ImageIcon } from 'lucide-react'
-import { getHistoryByType, deleteHistoryItem, DivinationHistoryItem } from '@/utils/divinationHistory'
+import { Calendar, Heart, Image as ImageIcon, Moon, Trash2 } from 'lucide-react'
+import { deleteHistoryItem, DivinationHistoryItem, getHistory } from '@/utils/divinationHistory'
 import { ResultDrawer } from '@/components/ResultDrawer'
 import { toast } from 'sonner'
 import MarkdownIt from 'markdown-it'
 import { getHistoryImage } from '@/utils/divinationImageStore'
+import { getDivinationOption } from '@/config/constants'
 
 const md = new MarkdownIt()
 const HISTORY_ACTION_TOAST_ID = 'history-action'
+type HistoryCategory = 'dream' | 'emotion_journal'
+
+const HISTORY_CATEGORIES = [
+  {
+    key: 'dream',
+    label: '梦境解读',
+    emptyTitle: '还没有梦境记录',
+    emptyDescription: '完成第一次梦境解读后会自动保存在这里',
+    clearLabel: '清空梦境',
+    icon: Moon,
+  },
+  {
+    key: 'emotion_journal',
+    label: '情绪日记',
+    emptyTitle: '还没有情绪日记',
+    emptyDescription: '完成第一次情绪回应后会自动保存在这里',
+    clearLabel: '清空日记',
+    icon: Heart,
+  },
+] as const
 
 export default function HistoryPage() {
   const navigate = useNavigate()
-  const type = 'dream'
+  const [activeCategory, setActiveCategory] = useState<HistoryCategory>('dream')
   const [history, setHistory] = useState<DivinationHistoryItem[]>([])
   const [selectedItem, setSelectedItem] = useState<DivinationHistoryItem | null>(null)
   const [showDrawer, setShowDrawer] = useState(false)
@@ -23,13 +44,27 @@ export default function HistoryPage() {
 
   useEffect(() => {
     loadHistory()
-  }, [type])
+  }, [])
 
   const loadHistory = () => {
-    setHistory(getHistoryByType(type))
+    setHistory(getHistory())
   }
 
-  const handleDelete = (id: string) => {
+  const filteredHistory = useMemo(
+    () => history.filter(item => item.type === activeCategory),
+    [activeCategory, history],
+  )
+
+  const categoryCounts = useMemo(() => ({
+    dream: history.filter(item => item.type === 'dream').length,
+    emotion_journal: history.filter(item => item.type === 'emotion_journal').length,
+  }), [history])
+
+  const activeCategoryConfig = HISTORY_CATEGORIES.find(
+    category => category.key === activeCategory,
+  ) || HISTORY_CATEGORIES[0]
+
+  const handleDelete = (id: string, type: string) => {
     deleteHistoryItem(id, type)
     loadHistory()
     toast.success('已删除', {
@@ -39,12 +74,10 @@ export default function HistoryPage() {
   }
 
   const handleClearAll = () => {
-    if (confirm('确定要清空所有历史记录吗？')) {
-      // 清空该类型的所有记录
-      const allHistory = getHistoryByType(type)
-      allHistory.forEach(item => deleteHistoryItem(item.id, type))
+    if (confirm(`确定要${activeCategoryConfig.clearLabel}记录吗？`)) {
+      filteredHistory.forEach(item => deleteHistoryItem(item.id, item.type))
       loadHistory()
-      toast.success('已清空所有历史记录', {
+      toast.success(`已${activeCategoryConfig.clearLabel}`, {
         id: HISTORY_ACTION_TOAST_ID,
         duration: 2000,
       })
@@ -73,6 +106,11 @@ export default function HistoryPage() {
     return md.render(selectedItem.result)
   }, [selectedItem])
 
+  const selectedConfig = useMemo(() => {
+    if (!selectedItem) return undefined
+    return getDivinationOption(selectedItem.type)
+  }, [selectedItem])
+
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp)
     const now = new Date()
@@ -94,34 +132,61 @@ export default function HistoryPage() {
       <div className="mb-10 pb-4">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.22em] text-primary">Dream archive</p>
-            <h1 className="font-editorial mt-2 text-4xl font-semibold md:text-5xl">解梦记录</h1>
+            <p className="text-xs uppercase tracking-[0.22em] text-primary">Emotional archive</p>
+            <h1 className="font-editorial mt-2 text-4xl font-semibold md:text-5xl">探索记录</h1>
             <p className="mt-3 text-sm text-muted-foreground">
-              当前浏览器保存了 {history.length} 条记录
+              当前分类保存了 {filteredHistory.length} 条记录
             </p>
           </div>
-          {history.length > 0 && (
+          {filteredHistory.length > 0 && (
             <Button onClick={handleClearAll} variant="outline" size="sm" className="gap-2 rounded-full text-destructive hover:text-destructive">
               <Trash2 className="h-4 w-4" />
-              清空所有
+              {activeCategoryConfig.clearLabel}
             </Button>
           )}
         </div>
       </div>
 
+      <div className="mb-7 inline-flex w-full rounded-2xl bg-card p-1.5 shadow-[0_12px_36px_-28px_rgba(30,27,46,0.45)] sm:w-auto">
+        {HISTORY_CATEGORIES.map((category) => {
+          const Icon = category.icon
+          const active = category.key === activeCategory
+          return (
+            <button
+              key={category.key}
+              type="button"
+              onClick={() => setActiveCategory(category.key)}
+              className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors sm:min-w-40 ${
+                active
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              {category.label}
+              <span className={`rounded-full px-2 py-0.5 text-[11px] ${
+                active ? 'bg-primary-foreground/15' : 'bg-muted'
+              }`}>
+                {categoryCounts[category.key]}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
       <div>
-          {history.length === 0 ? (
+          {filteredHistory.length === 0 ? (
             <div className="rounded-[2rem] border border-dashed border-border py-20 text-center text-muted-foreground">
               <Calendar className="mx-auto mb-5 h-12 w-12 opacity-40" />
-              <p className="font-editorial text-xl text-foreground">还没有梦境记录</p>
-              <p className="mt-2 text-sm">完成第一次解梦后会自动保存在这里</p>
+              <p className="font-editorial text-xl text-foreground">{activeCategoryConfig.emptyTitle}</p>
+              <p className="mt-2 text-sm">{activeCategoryConfig.emptyDescription}</p>
               <Button onClick={() => navigate('/')} className="mt-6 rounded-full bg-foreground text-background hover:bg-foreground/85">
-                去记录一个梦
+                返回首页
               </Button>
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
-              {history.map((item) => (
+              {filteredHistory.map((item) => (
                 <Card
                   key={item.id}
                   className="group cursor-pointer rounded-2xl border-border bg-card shadow-none transition-all hover:-translate-y-0.5 hover:border-foreground/25"
@@ -150,7 +215,7 @@ export default function HistoryPage() {
                         className="h-8 w-8 shrink-0 p-0 text-muted-foreground opacity-60 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
                         onClick={(e) => {
                           e.stopPropagation()
-                          handleDelete(item.id)
+                          handleDelete(item.id, item.type)
                         }}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -173,6 +238,11 @@ export default function HistoryPage() {
           streaming={false}
           image={selectedImage}
           imageLoading={imageLoading}
+          title={selectedItem.type === 'emotion_journal' ? '情绪回应' : '梦境解读'}
+          eyebrow={selectedItem.type === 'emotion_journal' ? 'Emotional reflection' : 'Dream reading'}
+          imageTitle={selectedItem.type === 'emotion_journal' ? '此刻的画面' : '梦境画面'}
+          imageAlt={selectedItem.type === 'emotion_journal' ? '情绪日记配图' : '梦境配图'}
+          downloadName={`火山梦绘AI-${selectedConfig?.title || '探索记录'}`}
         />
       )}
     </div>

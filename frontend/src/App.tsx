@@ -81,7 +81,8 @@ function App() {
             <Route path="/divination/dream" element={<Navigate to="/" replace />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/login/:login_type" element={<LoginPage />} />
-            <Route path="/history/dream" element={<HistoryPage />} />
+            <Route path="/history" element={<HistoryPage />} />
+            <Route path="/history/dream" element={<Navigate to="/history" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         ) : settings.error ? (

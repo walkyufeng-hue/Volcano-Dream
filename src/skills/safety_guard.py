@@ -38,9 +38,15 @@ class SafetyGuardSkill:
 
         if context.risk_signals:
             context.risk_level = "elevated"
+            regular_analysis = (
+                "象征化解梦"
+                if context.scenario == "dream"
+                else "常规情绪分析"
+            )
             context.add_instruction(
                 "检测到用户文字中可能存在现实层面的自伤或轻生表达。"
-                "不要继续进行象征化解梦，也不要评价或说教；先用简短、直接、温和的语言确认安全，"
+                f"不要继续进行{regular_analysis}，也不要评价或说教；"
+                "先用简短、直接、温和的语言确认安全，"
                 "建议用户立即联系可信任的人、当地急救或危机干预资源。"
                 "不得声称已完成专业风险评估。"
             )
