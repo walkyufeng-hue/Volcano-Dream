@@ -1,6 +1,15 @@
 
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
 from src.models import DivinationBody
-from typing import Optional
+
+
+@dataclass(frozen=True)
+class PreparedDivination:
+    prompt: str
+    system_prompt: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class MetaDivination(type):
@@ -24,3 +33,7 @@ class DivinationFactory(metaclass=MetaDivination):
 
     def build_prompt(self, divination_body: DivinationBody) -> tuple[str, str]:
         return '', ''
+
+    def prepare(self, divination_body: DivinationBody) -> PreparedDivination:
+        prompt, system_prompt = self.build_prompt(divination_body)
+        return PreparedDivination(prompt=prompt, system_prompt=system_prompt)

@@ -72,7 +72,16 @@ async def divination(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"No prompt type {divination_body.prompt_type} not supported"
         )
-    prompt, system_prompt = divination_obj.build_prompt(divination_body)
+    prepared = divination_obj.prepare(divination_body)
+    prompt = prepared.prompt
+    system_prompt = prepared.system_prompt
+    risk_level = prepared.metadata.get("risk_level", "normal")
+    _logger.info(
+        "AI workflow=%s skills=%s risk_level=%s",
+        prepared.metadata.get("workflow", "legacy"),
+        prepared.metadata.get("skills", []),
+        risk_level,
+    )
 
     if not settings.api_key:
         raise HTTPException(
@@ -117,7 +126,7 @@ async def divination(
                     current_response = event.choices[0].delta.content
                     full_response += current_response
                     yield f"data: {json.dumps(current_response)}\n\n"
-            if full_response:
+            if full_response and risk_level == "normal":
                 image_token = create_image_token(
                     divination_body.prompt,
                     full_response,

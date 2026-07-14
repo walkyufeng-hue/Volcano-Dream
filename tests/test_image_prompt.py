@@ -1,6 +1,7 @@
 import unittest
 
 from src.image_router import build_image_prompt
+from src.skills import DreamImageGenerationSkill
 
 
 class DreamImagePromptTests(unittest.TestCase):
@@ -30,6 +31,21 @@ class DreamImagePromptTests(unittest.TestCase):
         self.assertNotIn("梦" * 501, prompt)
         self.assertIn("解" * 700, prompt)
         self.assertNotIn("解" * 701, prompt)
+
+    def test_image_generation_skill_keeps_primary_then_fallback_order(
+        self,
+    ) -> None:
+        skill = DreamImageGenerationSkill(
+            api_base="https://example.com/v1",
+            api_key="test-key",
+            primary_model="primary-image-model",
+            fallback_model="fallback-image-model",
+        )
+
+        self.assertEqual(
+            skill.model_candidates,
+            ("primary-image-model", "fallback-image-model"),
+        )
 
 
 if __name__ == "__main__":

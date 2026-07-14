@@ -222,8 +222,14 @@ export function ResultDrawer({
               </div>
             ) : result ? (
               <div className={streaming ? 'streaming-content' : 'animate-in fade-in duration-300'}>
+                <div
+                  className="dream-result-prose prose prose-sm mx-auto max-w-4xl dark:prose-invert md:prose-base prose-headings:font-editorial prose-headings:text-foreground prose-p:text-foreground/85 prose-strong:text-foreground prose-ul:text-foreground/85 prose-ol:text-foreground/85"
+                  dangerouslySetInnerHTML={{ __html: result }}
+                />
+                {streaming && <span className="cursor-blink ml-1 inline-flex h-5 w-1.5 rounded-sm bg-primary align-middle" />}
+
                 {(imageLoading || image || imageError) && (
-                  <div className="mx-auto mb-8 w-full max-w-2xl">
+                  <div className="mx-auto mt-10 w-full max-w-2xl md:mt-14">
                     <div className="mb-3 flex items-center justify-between gap-4">
                       <h3 className="flex items-center gap-2 font-editorial text-lg font-semibold">
                         <ImageIcon className="h-5 w-5 text-primary" />
@@ -257,12 +263,6 @@ export function ResultDrawer({
                     )}
                   </div>
                 )}
-
-                <div
-                  className="dream-result-prose prose prose-sm mx-auto max-w-4xl dark:prose-invert md:prose-base prose-headings:font-editorial prose-headings:text-foreground prose-p:text-foreground/85 prose-strong:text-foreground prose-ul:text-foreground/85 prose-ol:text-foreground/85"
-                  dangerouslySetInnerHTML={{ __html: result }}
-                />
-                {streaming && <span className="cursor-blink ml-1 inline-flex h-5 w-1.5 rounded-sm bg-primary align-middle" />}
                 <div className="h-14 md:h-20" aria-hidden="true" />
               </div>
             ) : null}
