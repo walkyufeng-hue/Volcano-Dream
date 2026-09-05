@@ -1,32 +1,88 @@
-# 火山梦绘AI（Volcano Dream AI）
+<div align="center">
+  <img src="./frontend/public/volcano-dream-192.png" width="88" alt="火山梦绘 AI Logo" />
+  <h1>火山梦绘 AI</h1>
+  <p>从一个梦，看见此刻的自己。</p>
+  <p>
+    <a href="https://www.volcanodream.online/"><strong>在线体验</strong></a>
+    ·
+    <a href="https://github.com/walkyufeng-hue/Volcano-Dream">GitHub 仓库</a>
+  </p>
+</div>
 
-火山梦绘AI是一个 AI 梦境解读与配图网站，结合中国传统梦文化与现代心理学视角，从梦境意象、心理映射、生活启示和行动建议等方面生成流式解读。
+火山梦绘 AI（Volcano Dream AI）是一款 AI 梦境解读与视觉生成产品。用户写下梦境后，系统会结合中国传统梦文化与现代心理视角，流式生成结构化解读，并为梦境创作一张专属配图。
 
-> 解梦结果仅供娱乐和自我反思，不是对未来的确定预言，也不能替代医学或心理专业建议。
+> 解梦结果仅用于娱乐和自我反思，不构成对未来的确定预测，也不能替代医学、心理或其他专业建议。
 
-## 功能
+## 在线体验
 
-- 通过 OpenRouter 调用 DeepSeek V4 Flash，流式生成梦境解读
-- 最多 500 字的梦境描述
-- 每个 IP 在滚动 24 小时内免费解梦 1 次
-- 首页实时显示当前 24 小时窗口内的剩余次数
-- 全站文字与图片每日费用总闸门
-- 浏览器本地保存最近 10 条历史记录
-- 支持停止生成、防重复提交和响应式页面
-- 支持复制解读文字、下载梦境配图和示例梦境
-- 可选 GitHub OAuth 登录
+访问：[https://www.volcanodream.online/](https://www.volcanodream.online/)
 
-## 技术栈
+![火山梦绘 AI 首页](docs/images/volcano-dream-homepage.png)
 
-- 后端：FastAPI、Pydantic、OpenAI Python SDK
-- 前端：React、TypeScript、Vite、Tailwind CSS、Zustand
-- 文字模型：OpenRouter 上的 DeepSeek V4 Flash（关闭思考模式）
-- 图片模型：Nano Banana 2（1K、16:9）
-- 地区限制回退：Recraft V4.1（仅当主图片模型明确提示地区不支持时启用）
+## 核心体验
+
+- **结构化梦境解读**：从核心意象、心理映射、现实关联、文化视角和行动建议等维度理解梦境。
+- **流式生成**：通过 SSE 实时返回内容，减少等待过程中的空白感，并支持主动停止生成。
+- **梦境视觉化**：文字解读完成后签发一次性配图凭证，再调用图像模型生成 16:9 梦境画面。
+- **本地探索记录**：浏览器保存最近 10 条梦境记录；生成图片使用 IndexedDB 存储，避免占满 LocalStorage。
+- **便捷使用**：支持示例梦境、复制解读、下载配图、防重复提交和响应式布局。
+- **用量与成本保护**：支持用户/IP 滚动限流、全站文字与图片预算上限，并在前端展示剩余额度。
+- **反馈与可选登录**：内置意见反馈；配置 GitHub OAuth 后可启用登录能力。
+
+## 产品流程
+
+```mermaid
+flowchart LR
+    A["输入梦境"] --> B["后端校验与限流"]
+    B --> C["文本模型生成解读"]
+    C --> D["SSE 流式展示"]
+    D --> E["签发一次性配图凭证"]
+    E --> F["生成受约束的图像 Prompt"]
+    F --> G["图片模型生成梦境画面"]
+    G --> H["保存到浏览器本地记录"]
+```
+
+这是一条确定性的 AI Workflow：模型负责文本理解、内容生成和视觉创作；输入校验、限流、预算控制、凭证校验、历史记录与下载等属于普通软件逻辑。本项目当前未使用 RAG，也不是具备自主规划与工具选择能力的 Agent。
+
+## 技术架构
+
+| 层级 | 主要技术与职责 |
+| --- | --- |
+| 前端 | React、TypeScript、Vite、Tailwind CSS、Zustand；负责输入、流式展示、结果操作与本地记录 |
+| 后端 | FastAPI、Pydantic；负责 API、输入校验、SSE、限流、预算控制和反馈服务 |
+| AI 服务 | 通过 OpenRouter 和 OpenAI Python SDK 调用可配置的文本与图像模型 |
+| 文本模型 | 默认 `deepseek/deepseek-v4-flash`，关闭思考模式以降低等待时间 |
+| 图像模型 | 默认 `google/gemini-3.1-flash-image`；地区受限时可回退至 `recraft/recraft-v4.1` |
+| 状态与存储 | 本地开发使用内存缓存；生产环境可接入 Redis/Upstash；浏览器使用 LocalStorage 与 IndexedDB |
+| 部署 | 提供 Docker、Docker Compose 与 Vercel 配置；当前线上服务通过 Cloudflare 对外访问 |
+
+## 项目结构
+
+```text
+Volcano-Dream/
+├── main.py                  # FastAPI 入口
+├── app/                     # 后端配置、路由、模型与服务
+├── frontend/                # React 前端
+│   └── src/
+│       ├── components/      # 页面与业务组件
+│       ├── stores/          # Zustand 状态管理
+│       └── services/        # API 与本地数据服务
+├── tests/                   # 后端回归测试
+├── docs/                    # 产品文档与 README 图片
+├── Dockerfile
+├── docker-compose.yml
+└── vercel.json
+```
 
 ## 本地运行
 
-在根目录创建 `.env`，不要将该文件提交到仓库：
+### 1. 配置环境变量
+
+```bash
+cp .env.example .env
+```
+
+至少填写以下配置，完整选项请查看 [`.env.example`](.env.example)：
 
 ```env
 api_key=你的_OpenRouter_API_Key
@@ -36,15 +92,7 @@ image_model=google/gemini-3.1-flash-image
 jwt_secret=请替换为足够长的随机字符串
 ```
 
-构建并启动前端：
-
-```bash
-cd frontend
-pnpm install
-VITE_API_BASE=http://127.0.0.1:8000 pnpm dev
-```
-
-启动后端：
+### 2. 启动后端
 
 ```bash
 python3 -m venv ./venv
@@ -52,34 +100,51 @@ python3 -m venv ./venv
 ./venv/bin/python3 main.py
 ```
 
-运行基础安全回归测试：
+后端默认运行在 `http://127.0.0.1:8000`。
+
+### 3. 启动前端
+
+```bash
+cd frontend
+pnpm install
+VITE_API_BASE=http://127.0.0.1:8000 pnpm dev
+```
+
+前端默认运行在 `http://127.0.0.1:5173`。
+
+### 4. 运行测试
 
 ```bash
 ./venv/bin/python3 -m unittest discover -s tests
 ```
 
-- 前端开发地址：`http://127.0.0.1:5173`
-- 后端地址：`http://127.0.0.1:8000`
+## 部署与安全建议
 
-## 公开部署
+- API Key、OAuth Secret 与 `jwt_secret` 只放在部署平台的 Secret/Environment Variables 中，禁止写入前端或提交到仓库。
+- 在 OpenRouter 后台为 API Key 设置消费上限，并按预算配置 `global_text_limit` 与 `global_image_limit`；紧急时可设为 `0` 关闭对应能力。
+- 生产环境使用 Redis 或 Upstash 保存共享限流记录，避免多实例部署时限流失效。
+- 前后端跨域部署时，将正式前端域名加入 `allowed_origins`。
+- 仅在可信反向代理之后开启 `trust_proxy_headers`，并正确配置 `trusted_proxy_networks`。
+- 意见反馈默认写入服务端数据库，部署到无状态平台时应改用托管数据库或挂载持久化存储。
 
-生产环境必须使用 Redis 或 Upstash 保存共享限流记录，并在部署平台的 Secret/Environment Variables 中配置 API Key。不要把 API Key 写入前端代码、Dockerfile 或 GitHub 仓库。
+使用 Docker Compose 可同时启动应用与带持久化存储的 Redis：
 
-上线前至少确认：
+```bash
+docker-compose up -d
+```
 
-- 在 OpenRouter 后台给 API Key 设置消费上限
-- 根据预算调整 `global_text_limit` 和 `global_image_limit`，紧急时设为 `0` 可关闭对应能力
-- 前后端分开部署时，将正式前端域名写入 `allowed_origins`
-- 只有在受信任反向代理之后才开启 `trust_proxy_headers`，并配置 `trusted_proxy_networks`
-- 意见反馈数据库目录已挂载持久化磁盘；Serverless 平台应改用托管数据库
-- 使用随机生成的长字符串替换默认 `jwt_secret` 后再开启登录
+## 数据与隐私说明
 
-`docker-compose up -d` 会同时启动网站和带持久化存储的 Redis。直接运行 `main.py` 时仍使用适合本地开发的内存缓存。
+- 梦境文本会发送给所配置的第三方 AI 服务商处理，请勿输入敏感个人信息。
+- 探索历史与生成图片默认保存在用户浏览器本地。
+- 意见反馈及用户主动填写的联系方式会提交到服务端保存。
+- 上线前应根据实际使用的模型服务、数据存储和部署地区补充正式的隐私政策与用户协议。
 
 ## 项目信息
 
+- 在线体验：[volcanodream.online](https://www.volcanodream.online/)
+- GitHub：[walkyufeng-hue/Volcano-Dream](https://github.com/walkyufeng-hue/Volcano-Dream)
 - 开发者：火山
-- GitHub：<https://github.com/walkyufeng-hue/Volcano-Dream>
 - 联系邮箱：<walkyufeng@gmail.com>
 
 ## License
