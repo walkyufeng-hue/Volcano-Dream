@@ -1,24 +1,26 @@
 from src.models import DivinationBody
-from src.workflows import DreamEmotionWorkflow
+from src.workflows import EmotionJournalWorkflow
 
 from .base import DivinationFactory, PreparedDivination
 
 
-DREAM_WORKFLOW = DreamEmotionWorkflow()
-DREAM_PROMPT = DREAM_WORKFLOW.build_default_system_prompt()
+EMOTION_JOURNAL_WORKFLOW = EmotionJournalWorkflow()
+EMOTION_JOURNAL_PROMPT = (
+    EMOTION_JOURNAL_WORKFLOW.build_default_system_prompt()
+)
 
 
-class DreamFactory(DivinationFactory):
+class EmotionJournalFactory(DivinationFactory):
 
-    divination_type = "dream"
+    divination_type = "emotion_journal"
 
     def prepare(self, divination_body: DivinationBody) -> PreparedDivination:
-        prepared = DREAM_WORKFLOW.prepare(divination_body.prompt)
+        prepared = EMOTION_JOURNAL_WORKFLOW.prepare(divination_body.prompt)
         return PreparedDivination(
             prompt=prepared.user_prompt,
             system_prompt=prepared.system_prompt,
             metadata={
-                "workflow": DREAM_WORKFLOW.name,
+                "workflow": EMOTION_JOURNAL_WORKFLOW.name,
                 "skills": prepared.context.skill_trace,
                 "risk_level": prepared.context.risk_level,
             },

@@ -1,6 +1,7 @@
 import unittest
 
-from src.image_router import build_image_prompt
+from src.image_router import build_emotion_image_prompt, build_image_prompt
+from src.skills import DreamImageGenerationSkill
 
 
 class DreamImagePromptTests(unittest.TestCase):
@@ -30,6 +31,34 @@ class DreamImagePromptTests(unittest.TestCase):
         self.assertNotIn("梦" * 501, prompt)
         self.assertIn("解" * 700, prompt)
         self.assertNotIn("解" * 701, prompt)
+
+    def test_image_generation_skill_keeps_primary_then_fallback_order(
+        self,
+    ) -> None:
+        skill = DreamImageGenerationSkill(
+            api_base="https://example.com/v1",
+            api_key="test-key",
+            primary_model="primary-image-model",
+            fallback_model="fallback-image-model",
+        )
+
+        self.assertEqual(
+            skill.model_candidates,
+            ("primary-image-model", "fallback-image-model"),
+        )
+
+    def test_emotion_image_uses_event_facts_and_one_emotional_tone(
+        self,
+    ) -> None:
+        prompt = build_emotion_image_prompt(
+            "今天完成了一项重要工作，回家后坐在窗边休息。",
+            "你可能同时感到放松和疲惫，需要一点安静的空间。",
+        )
+
+        self.assertIn("用户记录｜事实参考", prompt)
+        self.assertIn("一种最主要的情绪", prompt)
+        self.assertIn("完整连续的单一场景", prompt)
+        self.assertIn("不要复刻真实人物面容", prompt)
 
 
 if __name__ == "__main__":

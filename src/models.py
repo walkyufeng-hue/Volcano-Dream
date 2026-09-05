@@ -32,7 +32,7 @@ class User(BaseModel):
 
 class DivinationBody(BaseModel):
     prompt: str
-    prompt_type: Literal["dream"]
+    prompt_type: Literal["dream", "emotion_journal"]
 
 
 class FeedbackBody(BaseModel):

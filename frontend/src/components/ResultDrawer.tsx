@@ -15,6 +15,13 @@ interface ResultDrawerProps {
   onRetryImage?: () => void
   isGenerating?: boolean
   onCancel?: () => void
+  title?: string
+  eyebrow?: string
+  imageTitle?: string
+  imageAlt?: string
+  downloadName?: string
+  loadingTitle?: string
+  loadingDescription?: string
 }
 
 export function ResultDrawer({
@@ -29,6 +36,13 @@ export function ResultDrawer({
   onRetryImage,
   isGenerating = false,
   onCancel,
+  title = '梦境解读',
+  eyebrow = 'Dream reading',
+  imageTitle = '梦境画面',
+  imageAlt = '梦境配图',
+  downloadName = '火山梦绘AI-梦境画面',
+  loadingTitle = '正在解读你的梦境',
+  loadingDescription = '请稍候，文字完成后会自动绘制梦境画面',
 }: ResultDrawerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [isAnimating, setIsAnimating] = useState(false)
@@ -127,7 +141,7 @@ export function ResultDrawer({
     const extension = mimeType.includes('jpeg') ? 'jpg' : mimeType.split('/')[1] || 'png'
     const link = document.createElement('a')
     link.href = image
-    link.download = `火山梦绘AI-梦境画面.${extension}`
+    link.download = `${downloadName}.${extension}`
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -139,7 +153,7 @@ export function ResultDrawer({
         type="button"
         className={`absolute inset-0 bg-[#1e1b2e]/50 backdrop-blur-[2px] transition-opacity duration-200 ${isAnimating ? 'opacity-100' : 'opacity-0'}`}
         onClick={onClose}
-        aria-label="关闭梦境解读"
+        aria-label={`关闭${title}`}
       />
 
       <section
@@ -154,8 +168,8 @@ export function ResultDrawer({
           <div className="flex items-center gap-2.5">
             <Sparkles className="h-5 w-5 text-primary" />
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">Dream reading</p>
-              <h2 id="dream-result-title" className="font-editorial mt-1 text-xl font-semibold md:text-2xl">梦境解读</h2>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">{eyebrow}</p>
+              <h2 id="dream-result-title" className="font-editorial mt-1 text-xl font-semibold md:text-2xl">{title}</h2>
             </div>
           </div>
           <div className="flex items-center gap-1.5">
@@ -216,18 +230,24 @@ export function ResultDrawer({
                   <Sparkles className="absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 animate-pulse text-primary md:h-8 md:w-8" />
                 </div>
                 <div className="space-y-1.5 text-center">
-                  <p className="font-medium md:text-lg">正在解读你的梦境</p>
-                  <p className="text-sm text-muted-foreground">请稍候，文字完成后会自动绘制梦境画面</p>
+                  <p className="font-medium md:text-lg">{loadingTitle}</p>
+                  <p className="text-sm text-muted-foreground">{loadingDescription}</p>
                 </div>
               </div>
             ) : result ? (
               <div className={streaming ? 'streaming-content' : 'animate-in fade-in duration-300'}>
+                <div
+                  className="dream-result-prose prose prose-sm mx-auto max-w-4xl dark:prose-invert md:prose-base prose-headings:font-editorial prose-headings:text-foreground prose-p:text-foreground/85 prose-strong:text-foreground prose-ul:text-foreground/85 prose-ol:text-foreground/85"
+                  dangerouslySetInnerHTML={{ __html: result }}
+                />
+                {streaming && <span className="cursor-blink ml-1 inline-flex h-5 w-1.5 rounded-sm bg-primary align-middle" />}
+
                 {(imageLoading || image || imageError) && (
-                  <div className="mx-auto mb-8 w-full max-w-2xl">
+                  <div className="mx-auto mt-10 w-full max-w-2xl md:mt-14">
                     <div className="mb-3 flex items-center justify-between gap-4">
                       <h3 className="flex items-center gap-2 font-editorial text-lg font-semibold">
                         <ImageIcon className="h-5 w-5 text-primary" />
-                        梦境画面
+                        {imageTitle}
                       </h3>
                       <span className="text-[11px] text-muted-foreground">AI 自动生成 · 16:9</span>
                     </div>
@@ -241,7 +261,7 @@ export function ResultDrawer({
                     ) : image ? (
                       <img
                         src={image}
-                        alt="梦境配图"
+                        alt={imageAlt}
                         className="aspect-video w-full rounded-3xl object-cover shadow-[0_18px_50px_-30px_rgba(30,27,46,0.55)]"
                       />
                     ) : (
@@ -257,12 +277,6 @@ export function ResultDrawer({
                     )}
                   </div>
                 )}
-
-                <div
-                  className="dream-result-prose prose prose-sm mx-auto max-w-4xl dark:prose-invert md:prose-base prose-headings:font-editorial prose-headings:text-foreground prose-p:text-foreground/85 prose-strong:text-foreground prose-ul:text-foreground/85 prose-ol:text-foreground/85"
-                  dangerouslySetInnerHTML={{ __html: result }}
-                />
-                {streaming && <span className="cursor-blink ml-1 inline-flex h-5 w-1.5 rounded-sm bg-primary align-middle" />}
                 <div className="h-14 md:h-20" aria-hidden="true" />
               </div>
             ) : null}

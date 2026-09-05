@@ -48,7 +48,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
           <nav className="hidden items-center gap-8 md:flex" aria-label="主要导航">
             <Link to="/" className={navClass(location.pathname === '/')}>首页</Link>
-            <Link to="/history/dream" className={navClass(location.pathname.startsWith('/history'))}>解梦记录</Link>
+            <Link to="/history" className={navClass(location.pathname.startsWith('/history'))}>探索记录</Link>
             <Link to="/about" className={navClass(location.pathname === '/about')}>关于</Link>
           </nav>
 
@@ -84,8 +84,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
           {mobileMenuOpen && (
             <div className="absolute inset-x-0 top-[66px] rounded-2xl bg-card p-2 shadow-[0_24px_60px_-28px_rgba(30,27,46,0.5)] md:hidden">
               <Link to="/" onClick={closeMobileMenu} className="flex items-center rounded-xl px-4 py-3 text-sm hover:bg-muted">首页</Link>
-              <Link to="/history/dream" onClick={closeMobileMenu} className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm hover:bg-muted">
-                <History className="h-4 w-4" />解梦记录
+              <Link to="/history" onClick={closeMobileMenu} className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm hover:bg-muted">
+                <History className="h-4 w-4" />探索记录
               </Link>
               <Link to="/about" onClick={closeMobileMenu} className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm hover:bg-muted">
                 <Info className="h-4 w-4" />关于
@@ -116,7 +116,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
       <footer className="relative">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-5 py-7 text-xs text-muted-foreground md:flex-row md:items-center md:justify-between md:px-0">
           <p>© 2026 火山 · Volcano Dream AI</p>
-          <p>解梦结果仅供娱乐与自我反思，不构成专业建议。</p>
+          <p>AI回应仅供记录与自我反思，不构成专业建议。</p>
         </div>
       </footer>
     </div>

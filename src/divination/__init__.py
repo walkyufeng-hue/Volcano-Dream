@@ -1,5 +1,6 @@
 from . import base
 from . import dream
+from . import emotion_journal
 from .base import DivinationFactory
 
 import logging

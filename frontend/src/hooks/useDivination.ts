@@ -9,6 +9,24 @@ import { getDivinationOption } from '@/config/constants'
 const API_BASE = import.meta.env.VITE_API_BASE || ''
 const md = new MarkdownIt()
 
+function getErrorMessage(value: unknown, fallback: string): string {
+  if (typeof value === 'string' && value.trim()) return value
+  if (Array.isArray(value)) {
+    const messages = value
+      .map((item) => getErrorMessage(item, ''))
+      .filter(Boolean)
+    return messages.join('；') || fallback
+  }
+  if (value && typeof value === 'object') {
+    const errorObject = value as Record<string, unknown>
+    return getErrorMessage(
+      errorObject.detail ?? errorObject.message ?? errorObject.msg ?? errorObject.error,
+      fallback,
+    )
+  }
+  return fallback
+}
+
 export function useDivination(promptType: string) {
   const { jwt } = useGlobalState()
   const [result, setResult] = useState('')
@@ -25,6 +43,9 @@ export function useDivination(promptType: string) {
   const cancelledRef = useRef(false)
   const textAbortRef = useRef<AbortController | null>(null)
   const imageAbortRef = useRef<AbortController | null>(null)
+  const isEmotionJournal = promptType === 'emotion_journal'
+  const textFailureTitle = isEmotionJournal ? '情绪回应失败' : '解梦失败'
+  const imageFailureMessage = isEmotionJournal ? '情绪配图生成失败' : '梦境配图生成失败'
 
   const generateDreamImage = async (
     token: string = imageToken,
@@ -37,7 +58,7 @@ export function useDivination(promptType: string) {
     setImageLoading(true)
     setImageError('')
     try {
-      const response = await fetch(`${API_BASE}/api/dream-image`, {
+      const response = await fetch(`${API_BASE}/api/emotional-image`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${jwt || 'xxx'}`,
@@ -49,7 +70,7 @@ export function useDivination(promptType: string) {
 
       if (!response.ok) {
         const data = await response.json().catch(() => null)
-        throw new Error(data?.detail || '梦境配图生成失败')
+        throw new Error(getErrorMessage(data, imageFailureMessage))
       }
 
       const data = await response.json()
@@ -65,7 +86,7 @@ export function useDivination(promptType: string) {
       }
     } catch (error) {
       if (!controller.signal.aborted && !cancelledRef.current) {
-        setImageError(error instanceof Error ? error.message : '梦境配图生成失败')
+        setImageError(getErrorMessage(error, imageFailureMessage))
       }
     } finally {
       if (imageAbortRef.current === controller) imageAbortRef.current = null
@@ -124,14 +145,16 @@ export function useDivination(promptType: string) {
         headers,
         signal: controller.signal,
         async onopen(response) {
-          if (response.ok && response.headers.get('content-type') === EventStreamContentType) {
+          const contentType = response.headers.get('content-type') || ''
+          if (response.ok && contentType.startsWith(EventStreamContentType)) {
             setStreaming(true)
             return
           }
           if (response.status >= 400) {
             const data = await response.json().catch(() => null)
-            throw new Error(data?.detail || `${response.status} 解梦失败`)
+            throw new Error(getErrorMessage(data, `${response.status} ${textFailureTitle}`))
           }
+          throw new Error('服务返回格式异常，请确认后端服务已更新并重新启动')
         },
         onmessage(message) {
           if (cancelledRef.current) return
@@ -142,7 +165,13 @@ export function useDivination(promptType: string) {
             return
           }
           if (message.event === 'FatalError') {
-            throw new Error(message.data)
+            let eventError: unknown = message.data
+            try {
+              eventError = JSON.parse(message.data)
+            } catch {
+              // Keep the original event text when it is not JSON.
+            }
+            throw new Error(getErrorMessage(eventError, textFailureTitle))
           }
           if (!message.data) return
 
@@ -184,13 +213,13 @@ export function useDivination(promptType: string) {
         },
         onerror(error) {
           setStreaming(false)
-          throw error
+          throw new Error(getErrorMessage(error, textFailureTitle))
         },
       })
     } catch (error) {
       if (!controller.signal.aborted && !cancelledRef.current) {
-        const message = error instanceof Error ? error.message : '解梦失败'
-        setResult(md.render(`解梦失败：${message}`))
+        const message = getErrorMessage(error, textFailureTitle)
+        setResult(md.render(`${textFailureTitle}：${message}`))
       }
       setStreaming(false)
     } finally {
