@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Lightbulb, Loader2, Sparkles } from 'lucide-react'
+import { Loader2, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ResultDrawer } from '@/components/ResultDrawer'
@@ -14,27 +14,34 @@ interface QuotaInfo {
   used: number
   remaining: number
   window_seconds: number
+  service_available?: boolean
 }
 
-const DREAM_EXAMPLES = [
-  {
-    label: '梦见飞翔',
-    content: '我梦见自己从城市上空飞过，开始有些害怕，后来越来越轻松，最后落在一片安静的草地上。',
-  },
-  {
-    label: '梦见迷路',
-    content: '我梦见自己在一座陌生的大楼里反复寻找出口，走廊很长，但一路上总能听见熟悉的人在叫我。',
-  },
-  {
-    label: '梦见大海',
-    content: '我梦见自己站在夜晚的海边，远处有一座发光的火山，海面很平静，我既期待又有一点紧张。',
-  },
-]
+const MIN_DREAM_LENGTH = 20
+const DREAM_DRAFT_KEY = 'volcano_dream_draft'
+
+const readDreamDraft = () => {
+  try {
+    return window.localStorage.getItem(DREAM_DRAFT_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+const persistDreamDraft = (value: string) => {
+  try {
+    if (value) window.localStorage.setItem(DREAM_DRAFT_KEY, value)
+    else window.localStorage.removeItem(DREAM_DRAFT_KEY)
+  } catch {
+    // Keep the input usable when browser storage is unavailable.
+  }
+}
 
 export default function DreamPage() {
-  const [prompt, setPrompt] = useState('')
+  const [prompt, setPrompt] = useState(readDreamDraft)
   const [resultOpen, setResultOpen] = useState(false)
   const [quota, setQuota] = useState<QuotaInfo | null>(null)
+  const [quotaError, setQuotaError] = useState(false)
   const { settings, jwt } = useGlobalState()
   const {
     result,
@@ -44,32 +51,57 @@ export default function DreamPage() {
     image,
     imageLoading,
     imageError,
+    textCompleted,
+    analysis,
+    loadingMessage,
     onSubmit,
     cancelGeneration,
     retryImage,
   } = useDivination('dream')
 
-  const busy = loading || streaming || imageLoading
+  const textBusy = loading || streaming
+  const generationBusy = textBusy || imageLoading
+  const dreamLength = Array.from(prompt.trim()).length
+  const quotaExhausted = Boolean(quota?.enabled && quota.remaining <= 0)
+  const serviceUnavailable = quota?.service_available === false
+  const canSubmit = (
+    dreamLength >= MIN_DREAM_LENGTH
+    && !textBusy
+    && !quotaExhausted
+    && !serviceUnavailable
+  )
 
   const loadQuota = useCallback(async () => {
-    if (!settings.enable_rate_limit) return
+    setQuotaError(false)
     try {
       const response = await fetch(`${API_BASE}/api/v1/quota`, {
         headers: { Authorization: `Bearer ${jwt || 'xxx'}` },
       })
-      if (!response.ok) return
+      if (!response.ok) {
+        setQuota(null)
+        setQuotaError(true)
+        return
+      }
       setQuota(await response.json())
     } catch {
-      // The static rate-limit label remains visible if quota lookup fails.
+      setQuota(null)
+      setQuotaError(true)
     }
-  }, [jwt, settings.enable_rate_limit])
+  }, [jwt])
 
   useEffect(() => {
     void loadQuota()
   }, [loadQuota])
 
+  const updatePrompt = (value: string) => {
+    // Persist in the input event itself so an immediate refresh cannot happen
+    // before a delayed React effect has written the latest draft.
+    persistDreamDraft(value)
+    setPrompt(value)
+  }
+
   const handleSubmit = () => {
-    if (!prompt.trim() || busy) return
+    if (!canSubmit) return
     setResultOpen(true)
     setQuota((current) => current ? {
       ...current,
@@ -80,9 +112,15 @@ export default function DreamPage() {
   }
 
   const handleCloseResult = () => {
-    if (busy) cancelGeneration()
+    if (textBusy) {
+      const shouldClose = window.confirm(
+        '解读仍在进行，关闭将停止生成。你写下的梦会保留在输入框中，确定关闭吗？',
+      )
+      if (!shouldClose) return
+      cancelGeneration()
+    }
     setResultOpen(false)
-    setPrompt('')
+    if (textCompleted) updatePrompt('')
   }
 
   return (
@@ -100,55 +138,45 @@ export default function DreamPage() {
       </div>
 
       <div className="rounded-[1.75rem] bg-card p-[18px] shadow-[0_20px_60px_-34px_rgba(59,43,36,0.32)] md:rounded-[2rem] md:p-7">
-        <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="mb-4">
           <h2 className="font-editorial text-lg font-semibold sm:text-xl md:text-[22px]">昨晚，你梦见了什么？</h2>
-          <span className="shrink-0 text-[11px] text-muted-foreground md:text-xs">{prompt.length} / 500</span>
         </div>
 
         <Textarea
           value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
-          placeholder={'尽量写下你记得的画面、人物、情绪和细节……\n\n例如：我梦见自己站在海边，远处有一座正在发光的火山。'}
+          onChange={(event) => updatePrompt(event.target.value)}
+          placeholder="写下你还记得的画面、人物、情绪和细节……"
           maxLength={500}
           rows={7}
           className="min-h-[210px] resize-none rounded-[1.15rem] border border-border/75 bg-background/70 px-5 py-5 text-[15px] leading-7 shadow-none placeholder:text-muted-foreground/75 focus-visible:ring-1 focus-visible:ring-primary focus-visible:ring-offset-0 md:min-h-[210px]"
-          disabled={busy}
+          disabled={textBusy}
         />
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="mr-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <Lightbulb className="h-3.5 w-3.5 text-primary" />
-            试试示例
-          </span>
-          {DREAM_EXAMPLES.map((example) => (
-            <button
-              key={example.label}
-              type="button"
-              onClick={() => setPrompt(example.content)}
-              disabled={busy}
-              className="rounded-full bg-muted/65 px-3 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary disabled:pointer-events-none disabled:opacity-50"
-            >
-              {example.label}
-            </button>
-          ))}
+        <div className="mt-3 flex items-center justify-between gap-4 text-[11px] text-muted-foreground md:text-xs">
+          <span>{dreamLength} / {MIN_DREAM_LENGTH}</span>
+          <span>至少写 {MIN_DREAM_LENGTH} 字</span>
         </div>
 
         <div className="mt-4 flex justify-center">
           <Button
             onClick={handleSubmit}
-            disabled={busy || !prompt.trim()}
+            disabled={!canSubmit}
             size="lg"
             className="h-[52px] min-w-[188px] gap-2.5 rounded-[1.1rem] bg-primary px-7 text-primary-foreground shadow-none hover:bg-primary/90"
           >
-            {busy ? (
+            {textBusy ? (
               <>
                 <Loader2 className="h-[18px] w-[18px] animate-spin" />
-                {imageLoading ? '绘制梦境中' : '解读梦境中'}
+                解读梦境中
               </>
+            ) : serviceUnavailable ? (
+              '今日服务额度已用完'
+            ) : quotaExhausted ? (
+              '今日免费次数已用完'
             ) : (
               <>
                 <Sparkles className="h-[18px] w-[18px]" />
-                解读我的梦境
+                解读梦境
               </>
             )}
           </Button>
@@ -158,14 +186,18 @@ export default function DreamPage() {
       <div className="mt-7 flex flex-wrap items-center justify-center gap-x-7 gap-y-2 text-[11px] text-muted-foreground md:mt-8 md:text-xs">
         <span className="flex items-center gap-2">
           <i className="h-1.5 w-1.5 rounded-full bg-primary" />
-          {quota?.enabled
-            ? `每个 IP 每 24 小时限 ${quota.limit} 次 · 剩余 ${quota.remaining} 次`
-            : settings.enable_rate_limit
-              ? `每个 IP 免费 ${settings.rate_limit}`
-              : '描述越具体，解读越准确'}
+          {quotaError
+            ? '额度状态暂时无法查询，提交时会实时校验'
+            : quota?.service_available === false
+              ? '今日服务额度已用完，请明天再试'
+              : quota?.enabled
+                ? `每个 IP 每 24 小时限 ${quota.limit} 次 · 剩余 ${quota.remaining} 次`
+                : settings.enable_rate_limit
+                  ? `每个 IP 免费 ${settings.rate_limit}`
+                  : '描述越具体，解读越准确'}
         </span>
         <span className="flex items-center gap-2"><i className="h-1.5 w-1.5 rounded-full bg-muted-foreground/45" />结果仅供娱乐与自我反思</span>
-        <span className="hidden items-center gap-2 sm:flex"><i className="h-1.5 w-1.5 rounded-full bg-muted-foreground/45" />梦境内容仅用于本次生成</span>
+        <span className="hidden items-center gap-2 sm:flex"><i className="h-1.5 w-1.5 rounded-full bg-muted-foreground/45" />内容会发送给 AI，记录仅保存在当前浏览器</span>
       </div>
 
       <ResultDrawer
@@ -177,7 +209,9 @@ export default function DreamPage() {
         image={image}
         imageLoading={imageLoading}
         imageError={imageError}
-        isGenerating={busy}
+        analysis={analysis}
+        loadingMessage={loadingMessage}
+        isGenerating={generationBusy}
         onCancel={cancelGeneration}
         onRetryImage={() => void retryImage()}
       />

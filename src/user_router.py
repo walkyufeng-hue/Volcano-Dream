@@ -42,6 +42,22 @@ async def quota(
     request: Request,
     user: Optional[User] = Depends(get_user),
 ):
+    service_available = True
+    if settings.enable_global_budget:
+        if settings.global_text_limit <= 0:
+            service_available = False
+        else:
+            try:
+                global_used = CacheClientFactory.get_client().get_rate_limit_count(
+                    f"{settings.project_name}:global:text",
+                    settings.global_budget_window_seconds,
+                )
+                service_available = global_used < settings.global_text_limit
+            except HTTPException:
+                # Personal quota can still be displayed when the global counter
+                # is temporarily unavailable. Submission remains server-guarded.
+                pass
+
     if not settings.enable_rate_limit:
         return QuotaInfo(
             enabled=False,
@@ -49,6 +65,7 @@ async def quota(
             used=0,
             remaining=0,
             window_seconds=0,
+            service_available=service_available,
         )
 
     if user:
@@ -71,6 +88,7 @@ async def quota(
         used=used,
         remaining=max(max_requests - used, 0),
         window_seconds=time_window_seconds,
+        service_available=service_available,
     )
 
 

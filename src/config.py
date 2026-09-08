@@ -39,10 +39,12 @@ class Settings(BaseSettings):
     upstash_api_token: str = Field(default="", exclude=True, alias="KV_REST_API_TOKEN")
 
     # rate limit settings
-    enable_rate_limit: bool = True
-    # rate limit xxx request per xx seconds
-    # Anonymous users: at most 1 request in a rolling 24-hour window.
-    rate_limit: Tuple[int, int] = (1, 24 * 60 * 60)
+    # Personal/IP dream quota is open by default. The independent global text
+    # and image budgets below remain enabled to protect API spending.
+    enable_rate_limit: bool = False
+    # These values are retained for environments that explicitly turn the
+    # personal/IP quota back on.
+    rate_limit: Tuple[int, int] = (5, 24 * 60 * 60)
     user_rate_limit: Tuple[int, int] = (600, 60 * 60)
 
     # Whole-site circuit breakers. These rolling limits protect the API key

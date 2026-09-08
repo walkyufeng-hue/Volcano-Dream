@@ -7,8 +7,9 @@ import LoginPage from '@/pages/Login'
 import HistoryPage from '@/pages/History'
 import DreamPage from '@/pages/divination/DreamPage'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Sparkles } from 'lucide-react'
+import { RefreshCw, Sparkles } from 'lucide-react'
 import MainLayout from '@/layouts/MainLayout'
+import { Button } from '@/components/ui/button'
 
 const API_BASE = import.meta.env.VITE_API_BASE || ''
 
@@ -23,6 +24,7 @@ function App() {
 
   const fetchSettings = async () => {
     setLoading(true)
+    setSettings({ error: null })
     try {
       const response = await fetch(`${API_BASE}/api/v1/settings`, {
         method: 'GET',
@@ -74,21 +76,33 @@ function App() {
       )}
 
       <MainLayout>
-        {settings.fetched && !settings.error ? (
-          <Routes>
-            <Route path="/" element={<DreamPage />} />
-            <Route path="/about" element={<AboutPage />} />
-            <Route path="/divination/dream" element={<Navigate to="/" replace />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/login/:login_type" element={<LoginPage />} />
-            <Route path="/history/dream" element={<HistoryPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        ) : settings.error ? (
-          <Alert variant="destructive" className="glass">
-            <AlertDescription>{settings.error}</AlertDescription>
+        {settings.error && (
+          <Alert variant="destructive" className="mx-auto mb-5 max-w-5xl bg-card">
+            <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <span>暂时无法获取服务状态。你仍可浏览页面，也可以重新连接。</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0 gap-2"
+                onClick={() => void fetchSettings()}
+                disabled={loading}
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                重新连接
+              </Button>
+            </AlertDescription>
           </Alert>
-        ) : null}
+        )}
+        <Routes>
+          <Route path="/" element={<DreamPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/divination/dream" element={<Navigate to="/" replace />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/login/:login_type" element={<LoginPage />} />
+          <Route path="/history/dream" element={<HistoryPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </MainLayout>
       <Toaster />
     </>

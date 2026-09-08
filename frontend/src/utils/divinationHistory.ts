@@ -2,6 +2,8 @@ import {
   clearHistoryImages,
   deleteHistoryImage,
 } from '@/utils/divinationImageStore'
+import type { DreamAnalysis } from '@/types/dreamAnalysis'
+import { isDreamAnalysis } from '@/types/dreamAnalysis'
 
 export interface DivinationHistoryItem {
   id: string
@@ -11,10 +13,78 @@ export interface DivinationHistoryItem {
   result: string
   timestamp: number
   hasImage?: boolean
+  status?: 'complete' | 'interrupted'
+  summary?: string
+  mood?: string
+  symbols?: string[]
+  analysis?: DreamAnalysis
 }
 
 const HISTORY_KEY_PREFIX = 'divination_history_'
-const MAX_HISTORY_COUNT = 10
+const MOOD_KEYWORDS = [
+  '害怕', '焦虑', '紧张', '悲伤', '孤独', '愤怒', '困惑',
+  '平静', '轻松', '喜悦', '开心', '期待', '兴奋', '安心',
+]
+
+function cleanText(value: string): string {
+  return value
+    .replace(/[#>*_`~\[\]]/g, '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+export function deriveDreamMetadata(prompt: string, result: string) {
+  const normalizedPrompt = cleanText(prompt)
+  const firstPhrase = normalizedPrompt.split(/[，,。！？!?；;\n]/)[0]
+  const titleBase = firstPhrase || '未命名的梦'
+  const title = titleBase.length > 18
+    ? `${titleBase.slice(0, 18)}…`
+    : titleBase
+
+  const overviewMatch = result.match(
+    /##\s*01[^\n]*\n([\s\S]*?)(?=\n##\s*02|$)/,
+  )
+  const overview = cleanText(overviewMatch?.[1] || result)
+  const summary = overview.length > 90
+    ? `${overview.slice(0, 90)}…`
+    : overview
+
+  const symbols: string[] = []
+  const symbolPattern = /-\s+\*\*([^*]{1,24})\*\*\s*[：:]/g
+  let symbolMatch: RegExpExecArray | null
+  while ((symbolMatch = symbolPattern.exec(result)) && symbols.length < 4) {
+    const symbol = cleanText(symbolMatch[1])
+    if (symbol && !symbols.includes(symbol)) symbols.push(symbol)
+  }
+
+  const moodSource = `${normalizedPrompt} ${summary}`
+  const mood = MOOD_KEYWORDS.find((keyword) => moodSource.includes(keyword))
+
+  return { title, summary, mood, symbols }
+}
+
+export function getHistoryMetadata(item: DivinationHistoryItem) {
+  const analysis = isDreamAnalysis(item.analysis) ? item.analysis : undefined
+  const derived = deriveDreamMetadata(item.prompt, item.result)
+  return {
+    title: analysis?.title || (item.title && item.title !== '火山梦绘AI'
+      ? item.title
+      : derived.title),
+    summary: analysis?.summary || item.summary || derived.summary,
+    mood: analysis?.moods[0] || item.mood || derived.mood,
+    moods: analysis?.moods || (item.mood ? [item.mood] : derived.mood ? [derived.mood] : []),
+    symbols: analysis?.symbols.map((symbol) => symbol.name)
+      || (item.symbols?.length ? item.symbols : derived.symbols),
+  }
+}
+
+function normalizeHistoryItem(item: DivinationHistoryItem): DivinationHistoryItem {
+  return {
+    ...item,
+    analysis: isDreamAnalysis(item.analysis) ? item.analysis : undefined,
+  }
+}
 
 /**
  * 生成唯一ID
@@ -33,7 +103,17 @@ export function getHistoryByType(type: string): DivinationHistoryItem[] {
   try {
     const data = localStorage.getItem(`${HISTORY_KEY_PREFIX}${type}`)
     if (!data) return []
-    return JSON.parse(data)
+    const parsed: unknown = JSON.parse(data)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((item): item is DivinationHistoryItem => (
+        Boolean(item)
+        && typeof item === 'object'
+        && typeof (item as DivinationHistoryItem).id === 'string'
+        && typeof (item as DivinationHistoryItem).prompt === 'string'
+        && typeof (item as DivinationHistoryItem).result === 'string'
+      ))
+      .map(normalizeHistoryItem)
   } catch (error) {
     console.error('Failed to get history:', error)
     return []
@@ -77,6 +157,7 @@ export function saveHistory(item: Omit<DivinationHistoryItem, 'id' | 'timestamp'
 
     // 使用统一的时间戳和生成的唯一ID
     const newItem: DivinationHistoryItem = {
+      ...deriveDreamMetadata(item.prompt, item.result),
       ...item,
       id: generateUniqueId(),
       timestamp,
@@ -85,14 +166,7 @@ export function saveHistory(item: Omit<DivinationHistoryItem, 'id' | 'timestamp'
     // 添加到开头
     history.unshift(newItem)
 
-    // 每个类型保留最近10条
-    const limitedHistory = history.slice(0, MAX_HISTORY_COUNT)
-    const removedHistory = history.slice(MAX_HISTORY_COUNT)
-
-    localStorage.setItem(`${HISTORY_KEY_PREFIX}${item.type}`, JSON.stringify(limitedHistory))
-    removedHistory.forEach((removedItem) => {
-      void deleteHistoryImage(removedItem.id)
-    })
+    localStorage.setItem(`${HISTORY_KEY_PREFIX}${item.type}`, JSON.stringify(history))
     return newItem
   } catch (error) {
     console.error('Failed to save history:', error)

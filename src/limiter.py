@@ -91,3 +91,7 @@ def release_global_budget(
         return
     key, member = reservation
     CacheClientFactory.get_client().release_rate_limit(key, member)
+
+
+def release_rate_limit(key: str, reservation: str) -> None:
+    CacheClientFactory.get_client().release_rate_limit(key, reservation)

@@ -2,15 +2,23 @@ import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Trash2, Calendar, Image as ImageIcon } from 'lucide-react'
-import { getHistoryByType, deleteHistoryItem, DivinationHistoryItem } from '@/utils/divinationHistory'
+import { Trash2, Calendar, Download, Image as ImageIcon } from 'lucide-react'
+import {
+  clearHistory,
+  deleteHistoryItem,
+  DivinationHistoryItem,
+  getHistoryByType,
+  getHistoryMetadata,
+  markHistoryImageSaved,
+} from '@/utils/divinationHistory'
 import { ResultDrawer } from '@/components/ResultDrawer'
 import { toast } from 'sonner'
 import MarkdownIt from 'markdown-it'
-import { getHistoryImage } from '@/utils/divinationImageStore'
+import { getHistoryImage, saveHistoryImage } from '@/utils/divinationImageStore'
 
 const md = new MarkdownIt()
 const HISTORY_ACTION_TOAST_ID = 'history-action'
+const API_BASE = import.meta.env.VITE_API_BASE || ''
 
 export default function HistoryPage() {
   const navigate = useNavigate()
@@ -20,6 +28,7 @@ export default function HistoryPage() {
   const [showDrawer, setShowDrawer] = useState(false)
   const [selectedImage, setSelectedImage] = useState('')
   const [imageLoading, setImageLoading] = useState(false)
+  const [imageError, setImageError] = useState('')
 
   useEffect(() => {
     loadHistory()
@@ -40,9 +49,7 @@ export default function HistoryPage() {
 
   const handleClearAll = () => {
     if (confirm('确定要清空所有历史记录吗？')) {
-      // 清空该类型的所有记录
-      const allHistory = getHistoryByType(type)
-      allHistory.forEach(item => deleteHistoryItem(item.id, type))
+      clearHistory()
       loadHistory()
       toast.success('已清空所有历史记录', {
         id: HISTORY_ACTION_TOAST_ID,
@@ -54,14 +61,80 @@ export default function HistoryPage() {
   const handleViewResult = async (item: DivinationHistoryItem) => {
     setSelectedItem(item)
     setSelectedImage('')
+    setImageError('')
     setShowDrawer(true)
-    if (!item.hasImage) return
+    if (!item.hasImage) {
+      setImageError('这条梦境还没有配图')
+      return
+    }
 
     setImageLoading(true)
     try {
-      setSelectedImage(await getHistoryImage(item.id))
+      const savedImage = await getHistoryImage(item.id)
+      setSelectedImage(savedImage)
+      if (!savedImage) setImageError('已保存的配图无法读取，可以重新生成')
     } catch (error) {
       console.error('Failed to load history image:', error)
+    } finally {
+      setImageLoading(false)
+    }
+  }
+
+  const handleExport = async () => {
+    const exportedHistory = await Promise.all(history.map(async (item) => ({
+      ...item,
+      ...getHistoryMetadata(item),
+      image: item.hasImage ? await getHistoryImage(item.id).catch(() => '') : '',
+    })))
+    const blob = new Blob(
+      [JSON.stringify({ exportedAt: Date.now(), dreams: exportedHistory }, null, 2)],
+      { type: 'application/json;charset=utf-8' },
+    )
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `火山梦绘-梦境档案-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    toast.success('梦境档案已导出', {
+      id: HISTORY_ACTION_TOAST_ID,
+      duration: 2000,
+    })
+  }
+
+  const regenerateSelectedImage = async () => {
+    if (!selectedItem || imageLoading) return
+    setImageLoading(true)
+    setImageError('')
+    try {
+      const tokenResponse = await fetch(`${API_BASE}/api/dream-image/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dream: selectedItem.prompt,
+          interpretation: selectedItem.analysis?.image_prompt || selectedItem.result,
+        }),
+      })
+      if (!tokenResponse.ok) throw new Error('无法重新创建配图任务')
+      const { token } = await tokenResponse.json()
+      const imageResponse = await fetch(`${API_BASE}/api/dream-image`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      })
+      const imageData = await imageResponse.json().catch(() => null)
+      if (!imageResponse.ok || !imageData?.image) {
+        throw new Error(imageData?.detail || '梦境配图生成失败')
+      }
+      await saveHistoryImage(selectedItem.id, imageData.image)
+      markHistoryImageSaved(selectedItem.id, selectedItem.type)
+      setSelectedImage(imageData.image)
+      setSelectedItem((current) => current ? { ...current, hasImage: true } : current)
+      loadHistory()
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : '梦境配图生成失败')
     } finally {
       setImageLoading(false)
     }
@@ -101,10 +174,16 @@ export default function HistoryPage() {
             </p>
           </div>
           {history.length > 0 && (
-            <Button onClick={handleClearAll} variant="outline" size="sm" className="gap-2 rounded-full text-destructive hover:text-destructive">
-              <Trash2 className="h-4 w-4" />
-              清空所有
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => void handleExport()} variant="outline" size="sm" className="gap-2 rounded-full">
+                <Download className="h-4 w-4" />
+                导出档案
+              </Button>
+              <Button onClick={handleClearAll} variant="outline" size="sm" className="gap-2 rounded-full text-destructive hover:text-destructive">
+                <Trash2 className="h-4 w-4" />
+                清空所有
+              </Button>
+            </div>
           )}
         </div>
       </div>
@@ -121,7 +200,9 @@ export default function HistoryPage() {
             </div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
-              {history.map((item) => (
+              {history.map((item) => {
+                const metadata = getHistoryMetadata(item)
+                return (
                 <Card
                   key={item.id}
                   className="group cursor-pointer rounded-2xl border-border bg-card shadow-none transition-all hover:-translate-y-0.5 hover:border-foreground/25"
@@ -131,8 +212,11 @@ export default function HistoryPage() {
                     <div className="flex min-h-32 items-start justify-between gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="mb-5 flex flex-wrap items-center gap-2">
-                          <span className="text-xs uppercase tracking-[0.16em] text-primary">{item.title}</span>
+                          <span className="font-editorial text-base font-semibold text-foreground">{metadata.title}</span>
                           <span className="text-xs text-muted-foreground">· {formatDate(item.timestamp)}</span>
+                          {item.status === 'interrupted' && (
+                            <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">未完成</span>
+                          )}
                           {item.hasImage && (
                             <span className="flex items-center gap-1 rounded-full bg-secondary/10 px-2 py-1 text-xs text-secondary">
                               <ImageIcon className="h-3 w-3" />
@@ -140,9 +224,24 @@ export default function HistoryPage() {
                             </span>
                           )}
                         </div>
-                        <p className="line-clamp-3 font-editorial text-lg leading-7 text-foreground/85">
+                        <p className="line-clamp-2 text-sm leading-6 text-foreground/85">
                           {item.prompt}
                         </p>
+                        {(metadata.mood || metadata.symbols.length > 0) && (
+                          <div className="mt-4 flex flex-wrap gap-1.5">
+                            {metadata.mood && (
+                              <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs text-primary">{metadata.mood}</span>
+                            )}
+                            {metadata.symbols.map((symbol) => (
+                              <span key={symbol} className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">{symbol}</span>
+                            ))}
+                          </div>
+                        )}
+                        {metadata.summary && (
+                          <p className="mt-4 line-clamp-3 text-xs leading-5 text-muted-foreground">
+                            {metadata.summary}
+                          </p>
+                        )}
                       </div>
                       <Button
                         variant="ghost"
@@ -158,7 +257,8 @@ export default function HistoryPage() {
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+                )
+              })}
             </div>
           )}
       </div>
@@ -173,6 +273,9 @@ export default function HistoryPage() {
           streaming={false}
           image={selectedImage}
           imageLoading={imageLoading}
+          imageError={imageError}
+          analysis={selectedItem.analysis}
+          onRetryImage={() => void regenerateSelectedImage()}
         />
       )}
     </div>

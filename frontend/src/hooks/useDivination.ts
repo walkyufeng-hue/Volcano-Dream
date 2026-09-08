@@ -5,6 +5,11 @@ import { useGlobalState } from '@/store'
 import { markHistoryImageSaved, saveHistory } from '@/utils/divinationHistory'
 import { saveHistoryImage } from '@/utils/divinationImageStore'
 import { getDivinationOption } from '@/config/constants'
+import type { DreamAnalysis } from '@/types/dreamAnalysis'
+import {
+  dreamAnalysisToMarkdown,
+  isDreamAnalysis,
+} from '@/types/dreamAnalysis'
 
 const API_BASE = import.meta.env.VITE_API_BASE || ''
 const md = new MarkdownIt()
@@ -21,21 +26,61 @@ export function useDivination(promptType: string) {
   const [imageError, setImageError] = useState('')
   const [imageToken, setImageToken] = useState('')
   const [historyId, setHistoryId] = useState('')
+  const [textCompleted, setTextCompleted] = useState(false)
+  const [analysis, setAnalysis] = useState<DreamAnalysis | null>(null)
+  const [loadingMessage, setLoadingMessage] = useState('正在理解你的梦境')
   const submittingRef = useRef(false)
   const cancelledRef = useRef(false)
   const textAbortRef = useRef<AbortController | null>(null)
   const imageAbortRef = useRef<AbortController | null>(null)
+  const activePromptRef = useRef('')
+  const resultBufferRef = useRef('')
+  const analysisRef = useRef<DreamAnalysis | null>(null)
+  const imageTokenRef = useRef('')
+  const historySavedRef = useRef(false)
+  const generationIdRef = useRef(0)
+
+  const saveActiveResult = (status: 'complete' | 'interrupted') => {
+    if (
+      historySavedRef.current
+      || !resultBufferRef.current
+      || !activePromptRef.current
+    ) return null
+
+    const config = getDivinationOption(promptType)
+    if (!config) return null
+    const savedItem = saveHistory({
+      type: promptType,
+      prompt: activePromptRef.current,
+      result: resultBufferRef.current,
+      status,
+      analysis: analysisRef.current || undefined,
+      title: analysisRef.current?.title || config.title,
+      summary: analysisRef.current?.summary,
+      mood: analysisRef.current?.moods[0],
+      symbols: analysisRef.current?.symbols.map((symbol) => symbol.name),
+    })
+    if (savedItem) {
+      historySavedRef.current = true
+      setHistoryId(savedItem.id)
+    }
+    return savedItem
+  }
 
   const generateDreamImage = async (
     token: string = imageToken,
     itemId: string = historyId,
+    generationId: number = generationIdRef.current,
   ) => {
-    if (!token || imageAbortRef.current) return
+    if (!token) return
 
     const controller = new AbortController()
-    imageAbortRef.current = controller
-    setImageLoading(true)
-    setImageError('')
+    const isCurrentGeneration = () => generationId === generationIdRef.current
+    if (isCurrentGeneration()) {
+      imageAbortRef.current = controller
+      setImageLoading(true)
+      setImageError('')
+    }
     try {
       const response = await fetch(`${API_BASE}/api/dream-image`, {
         method: 'POST',
@@ -53,8 +98,7 @@ export function useDivination(promptType: string) {
       }
 
       const data = await response.json()
-      if (cancelledRef.current) return
-      setImage(data.image)
+      if (controller.signal.aborted) return
       if (itemId) {
         try {
           await saveHistoryImage(itemId, data.image)
@@ -63,22 +107,27 @@ export function useDivination(promptType: string) {
           console.error('Failed to save dream image:', storageError)
         }
       }
+      if (isCurrentGeneration()) setImage(data.image)
     } catch (error) {
-      if (!controller.signal.aborted && !cancelledRef.current) {
+      if (!controller.signal.aborted && isCurrentGeneration()) {
         setImageError(error instanceof Error ? error.message : '梦境配图生成失败')
       }
     } finally {
-      if (imageAbortRef.current === controller) imageAbortRef.current = null
-      setImageLoading(false)
+      if (isCurrentGeneration()) {
+        if (imageAbortRef.current === controller) imageAbortRef.current = null
+        setImageLoading(false)
+      }
     }
   }
 
   const cancelGeneration = () => {
+    saveActiveResult('interrupted')
     cancelledRef.current = true
     textAbortRef.current?.abort()
     imageAbortRef.current?.abort()
     textAbortRef.current = null
     imageAbortRef.current = null
+    generationIdRef.current += 1
     submittingRef.current = false
     setLoading(false)
     setResultLoading(false)
@@ -90,6 +139,11 @@ export function useDivination(promptType: string) {
   const onSubmit = async (params: { prompt: string }) => {
     if (submittingRef.current) return
 
+    const generationId = generationIdRef.current + 1
+    generationIdRef.current = generationId
+    // An older image may finish in the background and save to its own history
+    // item, but it must not lock or overwrite this new result.
+    imageAbortRef.current = null
     submittingRef.current = true
     cancelledRef.current = false
     const controller = new AbortController()
@@ -102,13 +156,21 @@ export function useDivination(promptType: string) {
       setStreaming(false)
       setResult('')
       setImage('')
+      setImageLoading(false)
       setImageError('')
       setImageToken('')
       setHistoryId('')
+      setTextCompleted(false)
+      setAnalysis(null)
+      setLoadingMessage('正在理解你的梦境')
+      activePromptRef.current = params.prompt
+      resultBufferRef.current = ''
+      analysisRef.current = null
+      imageTokenRef.current = ''
+      historySavedRef.current = false
 
       let tmpResultBuffer = ''
       let firstChunk = true
-      let receivedImageToken = ''
 
       const headers: Record<string, string> = {
         Authorization: `Bearer ${jwt || 'xxx'}`,
@@ -124,7 +186,8 @@ export function useDivination(promptType: string) {
         headers,
         signal: controller.signal,
         async onopen(response) {
-          if (response.ok && response.headers.get('content-type') === EventStreamContentType) {
+          const contentType = response.headers.get('content-type') || ''
+          if (response.ok && contentType.startsWith(EventStreamContentType)) {
             setStreaming(true)
             return
           }
@@ -132,17 +195,67 @@ export function useDivination(promptType: string) {
             const data = await response.json().catch(() => null)
             throw new Error(data?.detail || `${response.status} 解梦失败`)
           }
+          throw new Error('解梦服务返回了无法识别的内容')
         },
         onmessage(message) {
           if (cancelledRef.current) return
           if (message.event === 'image_token') {
             const data = JSON.parse(message.data)
-            receivedImageToken = data.token
+            imageTokenRef.current = data.token
             setImageToken(data.token)
             return
           }
+          if (message.event === 'phase') {
+            const data: unknown = JSON.parse(message.data)
+            if (
+              data
+              && typeof data === 'object'
+              && typeof (data as Record<string, unknown>).message === 'string'
+            ) {
+              setLoadingMessage((data as { message: string }).message)
+            }
+            return
+          }
+          if (message.event === 'analysis') {
+            const parsedAnalysis: unknown = JSON.parse(message.data)
+            if (!isDreamAnalysis(parsedAnalysis)) {
+              throw new Error('解梦结果格式异常，请稍后重试')
+            }
+
+            const markdownResult = dreamAnalysisToMarkdown(parsedAnalysis)
+            analysisRef.current = parsedAnalysis
+            resultBufferRef.current = markdownResult
+            setAnalysis(parsedAnalysis)
+            setResult(md.render(markdownResult))
+            setResultLoading(false)
+            setLoading(false)
+            firstChunk = false
+            return
+          }
+          if (message.event === 'legacy_result') {
+            // The backend emits this for one release window so cached older
+            // clients can still render a result. The structured client already has
+            // the validated analysis and must not duplicate it.
+            if (analysisRef.current) return
+          }
+          if (message.event === 'image_error') {
+            const errorMessage: unknown = JSON.parse(message.data)
+            setImageError(
+              typeof errorMessage === 'string'
+                ? errorMessage
+                : '梦境画面暂时无法生成',
+            )
+            return
+          }
+          if (message.event === 'done') return
           if (message.event === 'FatalError') {
-            throw new Error(message.data)
+            let errorMessage = message.data
+            try {
+              errorMessage = JSON.parse(message.data)
+            } catch {
+              // Keep plain-text server errors readable.
+            }
+            throw new Error(errorMessage)
           }
           if (!message.data) return
 
@@ -150,6 +263,7 @@ export function useDivination(promptType: string) {
             const newContent = JSON.parse(message.data)
             if (typeof newContent !== 'string') return
             tmpResultBuffer += newContent
+            resultBufferRef.current = tmpResultBuffer
             setResult(md.render(tmpResultBuffer))
 
             if (firstChunk) {
@@ -163,23 +277,16 @@ export function useDivination(promptType: string) {
         },
         onclose() {
           setStreaming(false)
-          if (cancelledRef.current || !tmpResultBuffer || !promptType) return
+          if (cancelledRef.current || !resultBufferRef.current || !promptType) return
 
-          const config = getDivinationOption(promptType)
-          if (!config) return
-          const savedItem = saveHistory({
-            type: promptType,
-            title: config.title,
-            prompt: params.prompt,
-            result: tmpResultBuffer,
-          })
+          const savedItem = saveActiveResult('complete')
+          setTextCompleted(Boolean(savedItem))
           if (savedItem) {
-            setHistoryId(savedItem.id)
-            if (receivedImageToken) {
-              void generateDreamImage(receivedImageToken, savedItem.id)
+            if (imageTokenRef.current) {
+              void generateDreamImage(imageTokenRef.current, savedItem.id, generationId)
             }
-          } else if (receivedImageToken) {
-            void generateDreamImage(receivedImageToken)
+          } else if (imageTokenRef.current) {
+            void generateDreamImage(imageTokenRef.current, '', generationId)
           }
         },
         onerror(error) {
@@ -188,9 +295,13 @@ export function useDivination(promptType: string) {
         },
       })
     } catch (error) {
+      const partialItem = saveActiveResult('interrupted')
       if (!controller.signal.aborted && !cancelledRef.current) {
         const message = error instanceof Error ? error.message : '解梦失败'
-        setResult(md.render(`解梦失败：${message}`))
+        const partialNotice = partialItem
+          ? `${resultBufferRef.current}\n\n> 解读中断，已保存当前内容。${message}`
+          : `解梦失败：${message}`
+        setResult(md.render(partialNotice))
       }
       setStreaming(false)
     } finally {
@@ -211,8 +322,14 @@ export function useDivination(promptType: string) {
     image,
     imageLoading,
     imageError,
+    textCompleted,
+    analysis,
+    loadingMessage,
     onSubmit,
     cancelGeneration,
-    retryImage: generateDreamImage,
+    retryImage: () => {
+      cancelledRef.current = false
+      return generateDreamImage()
+    },
   }
 }

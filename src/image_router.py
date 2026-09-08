@@ -3,17 +3,25 @@ import logging
 import secrets
 
 import httpx
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from src.cache import CacheClientFactory
 from src.config import settings
-from src.limiter import check_global_budget, release_global_budget
-from src.models import DreamImageBody
+from src.limiter import (
+    check_global_budget,
+    check_rate_limit,
+    get_real_ipaddr,
+    release_global_budget,
+    release_rate_limit,
+)
+from src.models import DreamImageBody, DreamImageTokenBody
 
 
 router = APIRouter()
 _logger = logging.getLogger(__name__)
 TOKEN_TTL_SECONDS = 10 * 60
+IMAGE_RETRY_TOKEN_LIMIT = 3
+IMAGE_RETRY_TOKEN_WINDOW_SECONDS = 24 * 60 * 60
 
 
 def _cache_key(token: str) -> str:
@@ -60,6 +68,44 @@ def build_image_prompt(dream: str, interpretation: str) -> str:
         "不要出现任何文字、字幕、标牌、边框、水印、Logo或界面元素；"
         "不要表现血腥、猎奇、过度恐怖或令人不适的细节。"
     )
+
+
+@router.post("/api/dream-image/token", tags=["Dream Image"])
+async def refresh_dream_image_token(body: DreamImageTokenBody, request: Request):
+    """Issue a short-lived image token for a locally saved dream."""
+    dream = body.dream.strip()
+    interpretation = body.interpretation.strip()
+    if len(dream) < 20 or not interpretation:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="梦境记录不完整，无法重新生成配图",
+        )
+    retry_key = (
+        f"{settings.project_name}:image-retry-token:"
+        f"{get_real_ipaddr(request)}"
+    )
+    try:
+        retry_reservation = check_rate_limit(
+            retry_key,
+            IMAGE_RETRY_TOKEN_WINDOW_SECONDS,
+            IMAGE_RETRY_TOKEN_LIMIT,
+        )
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="今天的配图重试次数已用完，请明天再试",
+            ) from exc
+        raise
+
+    try:
+        token = create_image_token(dream, interpretation)
+    except Exception:
+        if retry_reservation:
+            release_rate_limit(retry_key, retry_reservation)
+        raise
+
+    return {"token": token}
 
 
 @router.post("/api/dream-image", tags=["Dream Image"])
